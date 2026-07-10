@@ -1,8 +1,9 @@
+// Импорт Hono из CDN (esm.sh)
+import { Hono } from 'https://esm.sh/hono@4';
+
+// Оборачиваем всё в асинхронную функцию для обработки ошибок инициализации
 async function handleRequest(context) {
   try {
-    // Динамический импорт Hono
-    const { Hono } = await import('hono');
-
     const app = new Hono();
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========

@@ -1,5 +1,6 @@
 name = "workout-site"
 compatibility_date = "2026-07-10"
+main = "functions/[[path]].js"
 
 [[d1_databases]]
 binding = "DB"

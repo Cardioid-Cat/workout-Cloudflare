@@ -232,13 +232,11 @@ async function checkAdmin(c, room_slug, password) {
   return results.length > 0 && results[0].password === password;
 }
 
-// Отправка уведомления в Telegram (как в старой send_tg_notification)
 async function sendTgNotification(env, room, text) {
   const token = env.BOT_TOKEN;
   const chat_id = room.tg_chat_id;
   if (!token || !chat_id) return;
   try {
-    // Получаем участников чата
     const { results: members } = await env.DB.prepare("SELECT user_id FROM group_members WHERE chat_id = ?").bind(chat_id).all();
     let fullText;
     if (members.length > 0) {
@@ -401,7 +399,6 @@ app.post('/add_log', async (c) => {
   const amount = action_type === 'writeoff' ? -numericVal : numericVal;
   await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)").bind(profile_id, ex_name, amount, rooms[0].room_id).run();
 
-  // Отправляем уведомление в Telegram
   const pName = (await c.env.DB.prepare("SELECT name FROM profiles WHERE id = ?").bind(profile_id).all()).results[0]?.name || 'Кто-то';
   const actionTxt = action_type === 'writeoff' ? 'списал(а)' : 'получил(а) долг';
   await sendTgNotification(c.env, rooms[0], `⚖️ ${pName} ${actionTxt}: ${ex_name} (${value})`);

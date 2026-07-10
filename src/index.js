@@ -260,7 +260,7 @@ function renderCreateRoomPage(error = '') {
                 <label>Пароль админа</label>
             </div>
             <input type="password" name="password" id="passwordField" required>
-            <i class="far fa-eye password-toggle" onclick="togglePass()"></i>
+            <i class="far fa-eye password-toggle" id="passwordToggle" onclick="togglePass()"></i>
         </div>
 
         <div class="form-group">
@@ -279,7 +279,7 @@ function renderCreateRoomPage(error = '') {
 <!-- Глобальные попапы -->
 <div id="slug-popup" class="global-popup">
     <span class="popup-close">&times;</span>
-    <p>Ссылка на вашу комнату будет: <strong>${escapeHtml('https://workout-cloudflare.il8988123.workers.dev/')}</strong> + введённый адрес.<br>Пример: <strong>${escapeHtml('https://workout-cloudflare.il8988123.workers.dev/matrix')}</strong></p>
+    <p>Ссылка на вашу комнату будет: <strong>https://workout-cloudflare.il8988123.workers.dev/</strong> + введённый адрес.<br>Пример: <strong>https://workout-cloudflare.il8988123.workers.dev/matrix</strong></p>
 </div>
 <div id="tg-popup" class="global-popup">
     <span class="popup-close">&times;</span>
@@ -293,7 +293,16 @@ function renderCreateRoomPage(error = '') {
 <script>
     function togglePass() {
         const passInput = document.getElementById('passwordField');
-        passInput.type = passInput.type === 'password' ? 'text' : 'password';
+        const icon = document.getElementById('passwordToggle');
+        if (passInput.type === 'password') {
+            passInput.type = 'text';
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        } else {
+            passInput.type = 'password';
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
     }
 
     // Позиционирование попапа относительно иконки
@@ -361,85 +370,63 @@ function renderCreateRoomPage(error = '') {
 </html>`
 }
 
-// ==================== СТРАНИЦА КОМНАТЫ ====================
 function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap, errorMessage = '') {
-  const escapeHtmlLocal = escapeHtml
-  
+  const esc = escapeHtml
+
   const profilesListHtml = profiles.length > 0
-    ? profiles.map(p => `<div class="submenu-item"><span>${escapeHtmlLocal(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${escapeHtmlLocal(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? profiles.map(p => `<div class="submenu-item"><span>${esc(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${esc(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет участников</div>'
 
   const exercisesListHtml = exTypes.filter(ex => ex.name !== '🏆 Победа').length > 0
-    ? exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${escapeHtmlLocal(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${escapeHtmlLocal(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${esc(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${esc(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет упражнений</div>'
 
   const gamesListHtml = games.length > 0
-    ? games.map(g => `<div class="submenu-item"><span>${escapeHtmlLocal(g.game_name)} (${g.val} ${escapeHtmlLocal(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${escapeHtmlLocal(g.game_name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? games.map(g => `<div class="submenu-item"><span>${esc(g.game_name)} (${g.val} ${esc(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${esc(g.game_name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет игр</div>'
 
   const gameExOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
-    `<option value="${escapeHtmlLocal(ex.name)}" data-unit="${ex.unit_type}">${escapeHtmlLocal(ex.name)}</option>`
+    `<option value="${esc(ex.name)}" data-unit="${ex.unit_type}">${esc(ex.name)}</option>`
   ).join('')
 
-  const profileOptions = profiles.map(p => `<option value="${p.id}">${escapeHtmlLocal(p.name)}</option>`).join('')
+  const profileOptions = profiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
   const exDebtOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
-    `<option value="${escapeHtmlLocal(ex.name)}">${escapeHtmlLocal(ex.name)}</option>`
+    `<option value="${esc(ex.name)}">${esc(ex.name)}</option>`
   ).join('')
   const gameOptions = games.map(g =>
-    `<option value="${escapeHtmlLocal(g.game_name)}">${escapeHtmlLocal(g.game_name)} (${g.val} ${escapeHtmlLocal(g.ex_name)})</option>`
+    `<option value="${esc(g.game_name)}">${esc(g.game_name)} (${g.val} ${esc(g.ex_name)})</option>`
   ).join('')
   const winnerCheckboxes = profiles.map(p =>
-    `<div class="form-check">
-       <input class="form-check-input" type="checkbox" name="winner_ids" value="${p.id}" id="winner_${p.id}">
-       <label class="form-check-label" for="winner_${p.id}">${escapeHtmlLocal(p.name)}</label>
-     </div>`
+    `<div class="form-check"><input class="form-check-input" type="checkbox" name="winner_ids" value="${p.id}" id="winner_${p.id}"><label class="form-check-label" for="winner_${p.id}">${esc(p.name)}</label></div>`
   ).join('')
 
   const hallOfFameHtml = hallOfFame.length > 0
-    ? hallOfFame.map((p, index) => {
-        const wins = p.wins
-        let winsWord = 'побед'
-        if (wins % 10 === 1 && wins % 100 !== 11) winsWord = 'победа'
-        else if (wins % 10 >= 2 && wins % 10 <= 4 && (wins % 100 < 10 || wins % 100 >= 20)) winsWord = 'победы'
-        return `<div class="d-flex justify-content-between align-items-center ${index !== hallOfFame.length - 1 ? 'border-bottom' : ''} py-2">
-                 <span class="hall-of-fame-text">👤 ${escapeHtmlLocal(p.name)}</span>
-                 <span class="fw-bold" style="color: #3182CE;">${wins} ${winsWord}</span>
-               </div>`
+    ? hallOfFame.map((p, i) => {
+        const w = p.wins
+        let word = 'побед'
+        if (w % 10 === 1 && w % 100 !== 11) word = 'победа'
+        else if (w % 10 >= 2 && w % 10 <= 4 && (w % 100 < 10 || w % 100 >= 20)) word = 'победы'
+        return `<div class="d-flex justify-content-between align-items-center ${i !== hallOfFame.length-1 ? 'border-bottom' : ''} py-2"><span class="hall-of-fame-text">👤 ${esc(p.name)}</span><span class="fw-bold" style="color:#3182CE">${w} ${word}</span></div>`
       }).join('')
     : '<div class="text-center py-2 hall-of-fame-text">Побед пока нет.</div>'
 
   const debtsAccordionHtml = Object.entries(summary).map(([name, items], idx) => {
     const hasDebt = Object.values(items).some(v => v > 0)
     const itemsHtml = hasDebt
-      ? Object.entries(items)
-          .filter(([ex, val]) => val > 0)
-          .sort(([a], [b]) => a.localeCompare(b))
+      ? Object.entries(items).filter(([_, v]) => v > 0).sort(([a], [b]) => a.localeCompare(b))
           .map(([ex, val]) => {
-            const displayVal = exMap[ex] === 'time' ? formatTime(val) : val
-            return `<div class="d-flex justify-content-between border-bottom py-2">
-                     <span class="text-muted">${exIcons[ex] || '💪'} ${escapeHtmlLocal(ex)}</span>
-                     <span class="fw-bold">${displayVal}</span>
-                   </div>`
+            const dv = exMap[ex] === 'time' ? formatTime(val) : val
+            return `<div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">${exIcons[ex] || '💪'} ${esc(ex)}</span><span class="fw-bold">${dv}</span></div>`
           }).join('')
       : '<div class="text-center py-2"><span class="text-success fw-bold">Долгов нет! ✨</span></div>'
-    return `
-      <div class="accordion-item border-0 mb-2 shadow-sm" style="border-radius: 12px; overflow: hidden;">
-        <h2 class="accordion-header">
-          <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${idx}">
-            👤 ${escapeHtmlLocal(name)}
-          </button>
-        </h2>
-        <div id="collapse${idx}" class="accordion-collapse collapse">
-          <div class="accordion-body bg-white">${itemsHtml}</div>
-        </div>
-      </div>`
+    return `<div class="accordion-item border-0 mb-2 shadow-sm" style="border-radius:12px;overflow:hidden;"><h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${idx}">👤 ${esc(name)}</button></h2><div id="collapse${idx}" class="accordion-collapse collapse"><div class="accordion-body bg-white">${itemsHtml}</div></div></div>`
   }).join('')
 
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>💪 ${escapeHtmlLocal(room.title)}</title>
+    <title>💪 ${esc(room.title)}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
@@ -498,34 +485,11 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
         .accordion-button:not(.collapsed) { background-color: #FFF5F5; color: var(--accent-red); }
         .hall-of-fame-card { background: #EBF4FF; border: none; border-radius: 12px; }
         .hall-of-fame-text { color: #3182CE; font-weight: 500; }
-        .winner-checkbox-group {
-            max-height: 250px;
-            overflow-y: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 10px;
-            background: white;
-        }
-        .winner-checkbox-group .form-check {
-            padding: 8px 12px 8px 2rem;
-            margin: 0;
-            border-radius: 10px;
-            transition: background 0.1s;
-        }
-        .winner-checkbox-group .form-check:hover {
-            background: #F7FAFC;
-        }
-        .winner-checkbox-group .form-check-input {
-            width: 1.2em;
-            height: 1.2em;
-            margin-top: 0.1em;
-            cursor: pointer;
-        }
-        .winner-checkbox-group .form-check-label {
-            cursor: pointer;
-            font-size: 1rem;
-            margin-left: 10px;
-        }
+        .winner-checkbox-group { max-height: 250px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; background: white; }
+        .winner-checkbox-group .form-check { padding: 8px 12px 8px 2rem; margin: 0; border-radius: 10px; transition: background 0.1s; }
+        .winner-checkbox-group .form-check:hover { background: #F7FAFC; }
+        .winner-checkbox-group .form-check-input { width: 1.2em; height: 1.2em; margin-top: 0.1em; cursor: pointer; }
+        .winner-checkbox-group .form-check-label { cursor: pointer; font-size: 1rem; margin-left: 10px; }
         
         @media (max-width: 768px) {
             .sidebar {
@@ -575,11 +539,11 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <i class="bi bi-gear"></i>
                 <span class="sidebar-text">&nbsp; Настройки</span>
             </h5>
-            ${isAdmin ? `<a href="/logout?slug=${escapeHtmlLocal(room.slug)}" class="btn btn-sm btn-light mb-4 border sidebar-text">Выйти</a>` : `
+            ${isAdmin ? `<a href="/logout?slug=${esc(room.slug)}" class="btn btn-sm btn-light mb-4 border sidebar-text">Выйти</a>` : `
                 <div class="card border-0 bg-white p-3 shadow-sm mb-4 sidebar-hide" style="border-radius: 12px;">
                     <p class="text-muted small mb-2">🔑 Вход для админа</p>
                     <form action="/login" method="POST">
-                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                        <input type="hidden" name="slug" value="${esc(room.slug)}">
                         <input type="password" name="password" class="form-control form-control-sm mb-2" placeholder="Пароль">
                         <button class="btn btn-dark btn-sm w-100">Войти</button>
                     </form>
@@ -589,7 +553,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-games')"><i class="bi bi-controller"></i>&nbsp; <span class="sidebar-text">НАСТРОЙКА ИГР</span></div>
                 <div id="sub-games" class="submenu-settings">
                     <form action="/add_game" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                        <input type="hidden" name="slug" value="${esc(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Название игры" required pattern=".*\\S.*" title="Название не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <select name="ex_name" class="form-select form-select-sm mb-1" style="font-size: 0.75rem;" required onchange="updateGameValPlaceholder(this)">
                             <option value="" disabled selected>Упражнение</option>
@@ -604,7 +568,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-ex')"><i class="bi bi-person-walking"></i>&nbsp; <span class="sidebar-text">УПРАЖНЕНИЯ</span></div>
                 <div id="sub-ex" class="submenu-settings">
                     <form action="/add_exercise" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                        <input type="hidden" name="slug" value="${esc(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Название" required pattern=".*\\S.*" title="Название не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <select name="unit_type" class="form-select form-select-sm mb-1" style="font-size: 0.75rem;">
                             <option value="amount">Количество</option>
@@ -618,7 +582,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-users')"><i class="bi bi-person-fill"></i>&nbsp; <span class="sidebar-text">УЧАСТНИКИ</span></div>
                 <div id="sub-users" class="submenu-settings">
                     <form action="/add_profile" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                        <input type="hidden" name="slug" value="${esc(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Имя" required pattern=".*\\S.*" title="Имя не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <button type="submit" class="btn btn-dark btn-sm w-100" style="font-size: 0.7rem;">+ Добавить</button>
                     </form>
@@ -626,7 +590,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 </div>
 
                 <div class="undo-section">
-                    <p class="small text-muted mb-1 sidebar-text" style="font-size: 0.75rem;">${escapeHtmlLocal(lastActionText) || 'Нет действий'}</p>
+                    <p class="small text-muted mb-1 sidebar-text" style="font-size: 0.75rem;">${esc(lastActionText) || 'Нет действий'}</p>
                     <button class="btn-undo sidebar-text" data-bs-toggle="modal" data-bs-target="#confirmUndo">
                         <i class="bi bi-arrow-left-short"></i> Отменить
                     </button>
@@ -636,9 +600,9 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
     </div>
 
     <div class="main-content flex-grow-1 p-5">
-        ${errorMessage ? `<div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 12px;">${escapeHtmlLocal(errorMessage)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>` : ''}
+        ${errorMessage ? `<div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 12px;">${esc(errorMessage)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>` : ''}
 
-        <h1 class="fw-bold mb-4">💪 ${escapeHtmlLocal(room.title)}</h1>
+        <h1 class="fw-bold mb-4">💪 ${esc(room.title)}</h1>
 
         ${isAdmin ? `
         <div class="d-flex gap-4 mb-4 border-bottom">
@@ -648,7 +612,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 
         <div id="view-vvod">
             <form action="/add_log" method="POST" id="vvod-form">
-                <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                <input type="hidden" name="slug" value="${esc(room.slug)}">
                 <input type="hidden" name="action_type" id="action_type" value="add">
                 <select class="form-select form-select-lg mb-3 border-0 bg-light" name="profile_id" required style="border-radius: 12px;">
                     <option value="" disabled selected>Выберите человека...</option>
@@ -657,7 +621,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <input type="hidden" name="ex_name" id="selected-ex-name" required>
                 <div class="ex-grid mb-4">
                     ${exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => {
-                        return `<div class="btn-check-custom" data-unit="${ex.unit_type}" onclick="selectExercise(this, '${escapeHtmlLocal(ex.name)}')">${getUnitIcon(ex.unit_type)} ${escapeHtmlLocal(ex.name)}</div>`
+                        return `<div class="btn-check-custom" data-unit="${ex.unit_type}" onclick="selectExercise(this, '${esc(ex.name)}')">${getUnitIcon(ex.unit_type)} ${esc(ex.name)}</div>`
                     }).join('')}
                 </div>
                 <div id="vvod-controls" style="display:none;">
@@ -672,7 +636,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 
         <div id="view-igra" style="display:none;">
             <form action="/play_game" method="POST">
-                <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
+                <input type="hidden" name="slug" value="${esc(room.slug)}">
                 <label class="small text-muted">Игра?</label>
                 <select name="game_name" class="form-select mb-3 bg-light border-0 py-2">
                     ${gameOptions}
@@ -720,7 +684,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
             <h5 class="fw-bold mb-3">Отменить последнее действие?</h5>
             <div class="d-flex gap-2">
               <button class="btn btn-light w-100" data-bs-dismiss="modal">Нет</button>
-              <a href="/undo/${escapeHtmlLocal(room.slug)}" class="btn btn-dark w-100">Да, отменить</a>
+              <a href="/undo/${esc(room.slug)}" class="btn btn-dark w-100">Да, отменить</a>
             </div>
           </div>
         </div>
@@ -774,7 +738,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
             
             if (unit === 'time') {
                 input.placeholder = "Напр: 20 или 1:30";
-                input.pattern = "^(\\d+|\\d+:\\d+)$";
+                input.pattern = "^(\\\\d+|\\\\d+:\\\\d+)$";
                 input.title = "Введите число (секунды) или формат ММ:СС";
             } else {
                 input.placeholder = "Напр: 20";
@@ -794,7 +758,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 const url = this.getAttribute('data-url');
                 const name = this.getAttribute('data-name');
                 document.getElementById('delItemName').innerText = name;
-                document.getElementById('confirmDelLink').href = url + "?slug=${escapeHtmlLocal(room.slug)}";
+                document.getElementById('confirmDelLink').href = url + "?slug=${esc(room.slug)}";
                 let myModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
                 myModal.show();
             });
@@ -806,7 +770,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
             var inputField = document.getElementById('game_val_input');
             if (unit === 'time') {
                 inputField.placeholder = "Кол-во или ММ:СС (1:30)";
-                inputField.pattern = ".*\\S.*";
+                inputField.pattern = ".*\\\\S.*";
                 inputField.title = "";
             } else {
                 inputField.placeholder = "Только число (например, 50)";
@@ -906,7 +870,6 @@ app.post('/logout', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
-// Вспомогательная функция проверки админа через cookie
 function adminRequired(c, roomId) {
   const cookie = c.req.header('Cookie') || ''
   return cookie.includes(`auth_${roomId}=1`)

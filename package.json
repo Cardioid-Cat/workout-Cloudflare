@@ -1,7 +1,0 @@
-{
-  "name": "workout-site",
-  "version": "1.0.0",
-  "dependencies": {
-    "hono": "^4.0.0"
-  }
-}

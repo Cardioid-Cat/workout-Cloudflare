@@ -1,11 +1,14 @@
-import { Hono } from 'hono';
+async function handleRequest(context) {
+  try {
+    // Динамический импорт Hono
+    const { Hono } = await import('hono');
 
-const app = new Hono();
+    const app = new Hono();
 
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+    // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-function renderCreateRoomPage(error = '') {
-  return `<!DOCTYPE html>
+    function renderCreateRoomPage(error = '') {
+      return `<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -68,10 +71,10 @@ function renderCreateRoomPage(error = '') {
 </div>
 </body>
 </html>`;
-}
+    }
 
-function renderRoomPage(room, profiles, ex_types, games, logs, summary, hall_of_fame, is_admin, last_action_text, ex_icons, ex_map) {
-  return `<!DOCTYPE html>
+    function renderRoomPage(room, profiles, ex_types, games, logs, summary, hall_of_fame, is_admin, last_action_text, ex_icons, ex_map) {
+      return `<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -224,237 +227,246 @@ function renderRoomPage(room, profiles, ex_types, games, logs, summary, hall_of_
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>`;
-}
-
-async function checkAdmin(c, room_slug, password) {
-  if (!password) return false;
-  const { results } = await c.env.DB.prepare("SELECT password FROM rooms WHERE slug = ?").bind(room_slug).all();
-  return results.length > 0 && results[0].password === password;
-}
-
-// Отправка уведомления в Telegram (как в старой send_tg_notification)
-async function sendTgNotification(env, room, text) {
-  const token = env.BOT_TOKEN;
-  const chat_id = room.tg_chat_id;
-  if (!token || !chat_id) return;
-  try {
-    // Получаем участников чата
-    const { results: members } = await env.DB.prepare("SELECT user_id FROM group_members WHERE chat_id = ?").bind(chat_id).all();
-    let fullText;
-    if (members.length > 0) {
-      const mentions = members.map(m => `<a href="tg://user?id=${m.user_id}">\u2060</a>`).join('');
-      fullText = `📢 @all ${mentions}\n${text}`;
-    } else {
-      fullText = `📢 @all\n${text}`;
     }
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id,
-        text: fullText,
-        parse_mode: 'HTML'
-      })
+
+    async function checkAdmin(c, room_slug, password) {
+      if (!password) return false;
+      const { results } = await c.env.DB.prepare("SELECT password FROM rooms WHERE slug = ?").bind(room_slug).all();
+      return results.length > 0 && results[0].password === password;
+    }
+
+    // Отправка уведомления в Telegram
+    async function sendTgNotification(env, room, text) {
+      const token = env.BOT_TOKEN;
+      const chat_id = room.tg_chat_id;
+      if (!token || !chat_id) return;
+      try {
+        const { results: members } = await env.DB.prepare("SELECT user_id FROM group_members WHERE chat_id = ?").bind(chat_id).all();
+        let fullText;
+        if (members.length > 0) {
+          const mentions = members.map(m => `<a href="tg://user?id=${m.user_id}">\u2060</a>`).join('');
+          fullText = `📢 @all ${mentions}\n${text}`;
+        } else {
+          fullText = `📢 @all\n${text}`;
+        }
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id,
+            text: fullText,
+            parse_mode: 'HTML'
+          })
+        });
+      } catch (e) {
+        console.error('Ошибка отправки в Telegram:', e);
+      }
+    }
+
+    // ========== МАРШРУТЫ ==========
+
+    app.get('/', (c) => c.html(renderCreateRoomPage()));
+
+    app.get('/:slug', async (c) => {
+      const slug = c.req.param('slug');
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.text('Комната не найдена', 404);
+
+      const room = rooms[0];
+      const room_id = room.room_id;
+
+      const profiles = await c.env.DB.prepare("SELECT * FROM profiles WHERE room_id = ?").bind(room_id).all();
+      const ex_types = await c.env.DB.prepare("SELECT * FROM exercise_types WHERE room_id = ?").bind(room_id).all();
+      const games = await c.env.DB.prepare("SELECT * FROM games_presets WHERE room_id = ?").bind(room_id).all();
+      const logs = await c.env.DB.prepare("SELECT wl.*, p.name as profile_name FROM workout_logs wl LEFT JOIN profiles p ON wl.profile_id = p.id WHERE wl.room_id = ? ORDER BY wl.created_at DESC").bind(room_id).all();
+
+      const idToName = {};
+      profiles.results.forEach(p => idToName[p.id] = p.name);
+      const ex_map = {};
+      ex_types.results.forEach(e => ex_map[e.name] = e.unit_type);
+      const ex_icons = {};
+      ex_types.results.forEach(e => ex_icons[e.name] = e.unit_type === 'time' ? '🕒' : '💪');
+
+      const hof = {};
+      logs.results.forEach(l => {
+        if (l.exercise_type === '🏆 Победа') {
+          const name = idToName[l.profile_id] || l.profile_name;
+          hof[name] = (hof[name] || 0) + 1;
+        }
+      });
+      const hall_of_fame = Object.entries(hof).map(([name, wins]) => ({ name, wins }));
+
+      const summary = {};
+      profiles.results.forEach(p => summary[p.name] = {});
+      logs.results.forEach(l => {
+        if (l.exercise_type === '🏆 Победа') return;
+        const name = idToName[l.profile_id] || l.profile_name;
+        if (summary[name] !== undefined) {
+          const ex = l.exercise_type;
+          summary[name][ex] = (summary[name][ex] || 0) + l.amount;
+        }
+      });
+
+      const cookie = c.req.header('Cookie') || '';
+      const is_admin = cookie.includes(`auth_${room_id}=1`);
+
+      const last_log = logs.results[0];
+      const last_action_text = last_log ? `Последнее: ${idToName[last_log.profile_id] || last_log.profile_name} - ${last_log.exercise_type}` : '';
+
+      return c.html(renderRoomPage(room, profiles, ex_types, games, logs, summary, hall_of_fame, is_admin, last_action_text, ex_icons, ex_map));
     });
+
+    app.post('/create_room', async (c) => {
+      const body = await c.req.parseBody();
+      const { title, slug, password, tg_id } = body;
+      if (!title || !slug) return c.html(renderCreateRoomPage('Заполните обязательные поля'));
+      try {
+        await c.env.DB.prepare("INSERT INTO rooms (slug, title, password, tg_chat_id) VALUES (?, ?, ?, ?)")
+          .bind(slug, title, password, tg_id || null).run();
+        const { results: roomRows } = await c.env.DB.prepare("SELECT room_id FROM rooms WHERE slug = ?").bind(slug).all();
+        const room_id = roomRows[0].room_id;
+        await c.env.DB.prepare("INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, '🏆 Победа', 'amount')").bind(room_id).run();
+        return c.redirect(`/${slug}`);
+      } catch (e) {
+        return c.html(renderCreateRoomPage('Адрес уже занят или ошибка'));
+      }
+    });
+
+    app.post('/login', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length > 0 && rooms[0].password === password) {
+        c.header('Set-Cookie', `auth_${rooms[0].room_id}=1; Path=/; HttpOnly`);
+      }
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/logout', async (c) => {
+      const slug = c.req.query('slug') || '';
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length > 0) {
+        c.header('Set-Cookie', `auth_${rooms[0].room_id}=; Path=/; Max-Age=0`);
+      }
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/add_profile', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, name, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.redirect('/');
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      await c.env.DB.prepare("INSERT OR IGNORE INTO profiles (room_id, name) VALUES (?, ?)").bind(rooms[0].room_id, name).run();
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/add_exercise', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, name, unit_type, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0 || name === '🏆 Победа') return c.redirect(`/${slug}`);
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      await c.env.DB.prepare("INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, ?, ?)").bind(rooms[0].room_id, name, unit_type || 'amount').run();
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/add_game', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, game_name, ex_name, val, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.redirect('/');
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      let numericVal = parseInt(val);
+      if (isNaN(numericVal) && val.includes(':')) {
+        const parts = val.split(':');
+        numericVal = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      }
+      if (isNaN(numericVal)) return c.redirect(`/${slug}`);
+      const unit_type = (await c.env.DB.prepare("SELECT unit_type FROM exercise_types WHERE name = ? AND room_id = ?").bind(ex_name, rooms[0].room_id).all()).results[0]?.unit_type || 'amount';
+      await c.env.DB.prepare("INSERT OR IGNORE INTO games_presets (room_id, game_name, ex_name, val, unit_type) VALUES (?, ?, ?, ?, ?)").bind(rooms[0].room_id, game_name, ex_name, numericVal, unit_type).run();
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/add_log', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, profile_id, ex_name, value, action_type, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.redirect('/');
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      let numericVal = parseInt(value);
+      if (isNaN(numericVal) && value.includes(':')) {
+        const parts = value.split(':');
+        numericVal = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      }
+      if (isNaN(numericVal)) return c.redirect(`/${slug}`);
+      const amount = action_type === 'writeoff' ? -numericVal : numericVal;
+      await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)").bind(profile_id, ex_name, amount, rooms[0].room_id).run();
+
+      // Отправляем уведомление в Telegram
+      const pName = (await c.env.DB.prepare("SELECT name FROM profiles WHERE id = ?").bind(profile_id).all()).results[0]?.name || 'Кто-то';
+      const actionTxt = action_type === 'writeoff' ? 'списал(а)' : 'получил(а) долг';
+      await sendTgNotification(c.env, rooms[0], `⚖️ ${pName} ${actionTxt}: ${ex_name} (${value})`);
+
+      return c.redirect(`/${slug}`);
+    });
+
+    app.post('/play_game', async (c) => {
+      const body = await c.req.parseBody();
+      const { slug, game_name, winner_ids, password } = body;
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.redirect('/');
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      const room_id = rooms[0].room_id;
+      const { results: games } = await c.env.DB.prepare("SELECT * FROM games_presets WHERE room_id = ? AND game_name = ?").bind(room_id, game_name).all();
+      if (games.length === 0) return c.redirect(`/${slug}`);
+      const game = games[0];
+      const winnerList = Array.isArray(winner_ids) ? winner_ids : [winner_ids];
+      const { results: allProfiles } = await c.env.DB.prepare("SELECT id, name FROM profiles WHERE room_id = ?").bind(room_id).all();
+      const losersNames = [];
+      for (const p of allProfiles) {
+        if (winnerList.includes(String(p.id))) {
+          await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, '🏆 Победа', 1, ?)").bind(p.id, room_id).run();
+        } else {
+          await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)").bind(p.id, game.ex_name, game.val, room_id).run();
+          losersNames.push(p.name);
+        }
+      }
+      if (losersNames.length > 0) {
+        let valDisplay = game.val;
+        if (game.unit_type === 'time') {
+          valDisplay = `${Math.floor(game.val / 60)}:${(game.val % 60).toString().padStart(2, '0')}`;
+        }
+        const msg = `🎮 Игра: ${game_name}\n💀 Проиграли: ${losersNames.join(', ')} (+${valDisplay} ${game.ex_name})`;
+        await sendTgNotification(c.env, rooms[0], msg);
+      }
+      return c.redirect(`/${slug}`);
+    });
+
+    app.get('/undo/:slug', async (c) => {
+      const slug = c.req.param('slug');
+      const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
+      if (rooms.length === 0) return c.redirect('/');
+      const password = c.req.query('password') || '';
+      if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
+      await c.env.DB.prepare("DELETE FROM workout_logs WHERE id = (SELECT id FROM workout_logs WHERE room_id = ? ORDER BY created_at DESC LIMIT 1)").bind(rooms[0].room_id).run();
+      return c.redirect(`/${slug}`);
+    });
+
+    // Глобальный обработчик ошибок Hono
+    app.onError((err, c) => {
+      console.error(`Ошибка: ${err.message}`);
+      return c.text('Внутренняя ошибка сервера', 500);
+    });
+
+    // Возвращаем функцию fetch из Hono
+    return app.fetch(context.request, context.env, context);
+
   } catch (e) {
-    console.error('Ошибка отправки в Telegram:', e);
+    // Если произошла ошибка при инициализации, показываем её
+    return new Response(`Ошибка инициализации приложения: ${e.message}\n\nСтек: ${e.stack}`, { status: 500 });
   }
 }
 
-// ========== МАРШРУТЫ ==========
-
-app.get('/', (c) => c.html(renderCreateRoomPage()));
-
-app.get('/:slug', async (c) => {
-  const slug = c.req.param('slug');
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.text('Комната не найдена', 404);
-
-  const room = rooms[0];
-  const room_id = room.room_id;
-
-  const profiles = await c.env.DB.prepare("SELECT * FROM profiles WHERE room_id = ?").bind(room_id).all();
-  const ex_types = await c.env.DB.prepare("SELECT * FROM exercise_types WHERE room_id = ?").bind(room_id).all();
-  const games = await c.env.DB.prepare("SELECT * FROM games_presets WHERE room_id = ?").bind(room_id).all();
-  const logs = await c.env.DB.prepare("SELECT wl.*, p.name as profile_name FROM workout_logs wl LEFT JOIN profiles p ON wl.profile_id = p.id WHERE wl.room_id = ? ORDER BY wl.created_at DESC").bind(room_id).all();
-
-  const idToName = {};
-  profiles.results.forEach(p => idToName[p.id] = p.name);
-  const ex_map = {};
-  ex_types.results.forEach(e => ex_map[e.name] = e.unit_type);
-  const ex_icons = {};
-  ex_types.results.forEach(e => ex_icons[e.name] = e.unit_type === 'time' ? '🕒' : '💪');
-
-  const hof = {};
-  logs.results.forEach(l => {
-    if (l.exercise_type === '🏆 Победа') {
-      const name = idToName[l.profile_id] || l.profile_name;
-      hof[name] = (hof[name] || 0) + 1;
-    }
-  });
-  const hall_of_fame = Object.entries(hof).map(([name, wins]) => ({ name, wins }));
-
-  const summary = {};
-  profiles.results.forEach(p => summary[p.name] = {});
-  logs.results.forEach(l => {
-    if (l.exercise_type === '🏆 Победа') return;
-    const name = idToName[l.profile_id] || l.profile_name;
-    if (summary[name] !== undefined) {
-      const ex = l.exercise_type;
-      summary[name][ex] = (summary[name][ex] || 0) + l.amount;
-    }
-  });
-
-  const cookie = c.req.header('Cookie') || '';
-  const is_admin = cookie.includes(`auth_${room_id}=1`);
-
-  const last_log = logs.results[0];
-  const last_action_text = last_log ? `Последнее: ${idToName[last_log.profile_id] || last_log.profile_name} - ${last_log.exercise_type}` : '';
-
-  return c.html(renderRoomPage(room, profiles, ex_types, games, logs, summary, hall_of_fame, is_admin, last_action_text, ex_icons, ex_map));
-});
-
-app.post('/create_room', async (c) => {
-  const body = await c.req.parseBody();
-  const { title, slug, password, tg_id } = body;
-  if (!title || !slug) return c.html(renderCreateRoomPage('Заполните обязательные поля'));
-  try {
-    await c.env.DB.prepare("INSERT INTO rooms (slug, title, password, tg_chat_id) VALUES (?, ?, ?, ?)")
-      .bind(slug, title, password, tg_id || null).run();
-    const { results: roomRows } = await c.env.DB.prepare("SELECT room_id FROM rooms WHERE slug = ?").bind(slug).all();
-    const room_id = roomRows[0].room_id;
-    await c.env.DB.prepare("INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, '🏆 Победа', 'amount')").bind(room_id).run();
-    return c.redirect(`/${slug}`);
-  } catch (e) {
-    return c.html(renderCreateRoomPage('Адрес уже занят или ошибка'));
-  }
-});
-
-app.post('/login', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length > 0 && rooms[0].password === password) {
-    c.header('Set-Cookie', `auth_${rooms[0].room_id}=1; Path=/; HttpOnly`);
-  }
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/logout', async (c) => {
-  const slug = c.req.query('slug') || '';
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length > 0) {
-    c.header('Set-Cookie', `auth_${rooms[0].room_id}=; Path=/; Max-Age=0`);
-  }
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/add_profile', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, name, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.redirect('/');
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  await c.env.DB.prepare("INSERT OR IGNORE INTO profiles (room_id, name) VALUES (?, ?)").bind(rooms[0].room_id, name).run();
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/add_exercise', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, name, unit_type, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0 || name === '🏆 Победа') return c.redirect(`/${slug}`);
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  await c.env.DB.prepare("INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, ?, ?)").bind(rooms[0].room_id, name, unit_type || 'amount').run();
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/add_game', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, game_name, ex_name, val, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.redirect('/');
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  let numericVal = parseInt(val);
-  if (isNaN(numericVal) && val.includes(':')) {
-    const parts = val.split(':');
-    numericVal = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-  }
-  if (isNaN(numericVal)) return c.redirect(`/${slug}`);
-  const unit_type = (await c.env.DB.prepare("SELECT unit_type FROM exercise_types WHERE name = ? AND room_id = ?").bind(ex_name, rooms[0].room_id).all()).results[0]?.unit_type || 'amount';
-  await c.env.DB.prepare("INSERT OR IGNORE INTO games_presets (room_id, game_name, ex_name, val, unit_type) VALUES (?, ?, ?, ?, ?)").bind(rooms[0].room_id, game_name, ex_name, numericVal, unit_type).run();
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/add_log', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, profile_id, ex_name, value, action_type, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.redirect('/');
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  let numericVal = parseInt(value);
-  if (isNaN(numericVal) && value.includes(':')) {
-    const parts = value.split(':');
-    numericVal = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-  }
-  if (isNaN(numericVal)) return c.redirect(`/${slug}`);
-  const amount = action_type === 'writeoff' ? -numericVal : numericVal;
-  await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)").bind(profile_id, ex_name, amount, rooms[0].room_id).run();
-
-  // Отправляем уведомление в Telegram
-  const pName = (await c.env.DB.prepare("SELECT name FROM profiles WHERE id = ?").bind(profile_id).all()).results[0]?.name || 'Кто-то';
-  const actionTxt = action_type === 'writeoff' ? 'списал(а)' : 'получил(а) долг';
-  await sendTgNotification(c.env, rooms[0], `⚖️ ${pName} ${actionTxt}: ${ex_name} (${value})`);
-
-  return c.redirect(`/${slug}`);
-});
-
-app.post('/play_game', async (c) => {
-  const body = await c.req.parseBody();
-  const { slug, game_name, winner_ids, password } = body;
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.redirect('/');
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  const room_id = rooms[0].room_id;
-  const { results: games } = await c.env.DB.prepare("SELECT * FROM games_presets WHERE room_id = ? AND game_name = ?").bind(room_id, game_name).all();
-  if (games.length === 0) return c.redirect(`/${slug}`);
-  const game = games[0];
-  const winnerList = Array.isArray(winner_ids) ? winner_ids : [winner_ids];
-  const { results: allProfiles } = await c.env.DB.prepare("SELECT id, name FROM profiles WHERE room_id = ?").bind(room_id).all();
-  const losersNames = [];
-  for (const p of allProfiles) {
-    if (winnerList.includes(String(p.id))) {
-      await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, '🏆 Победа', 1, ?)").bind(p.id, room_id).run();
-    } else {
-      await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)").bind(p.id, game.ex_name, game.val, room_id).run();
-      losersNames.push(p.name);
-    }
-  }
-  if (losersNames.length > 0) {
-    let valDisplay = game.val;
-    if (game.unit_type === 'time') {
-      valDisplay = `${Math.floor(game.val / 60)}:${(game.val % 60).toString().padStart(2, '0')}`;
-    }
-    const msg = `🎮 Игра: ${game_name}\n💀 Проиграли: ${losersNames.join(', ')} (+${valDisplay} ${game.ex_name})`;
-    await sendTgNotification(c.env, rooms[0], msg);
-  }
-  return c.redirect(`/${slug}`);
-});
-
-app.get('/undo/:slug', async (c) => {
-  const slug = c.req.param('slug');
-  const { results: rooms } = await c.env.DB.prepare("SELECT * FROM rooms WHERE slug = ?").bind(slug).all();
-  if (rooms.length === 0) return c.redirect('/');
-  const password = c.req.query('password') || '';
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`);
-  await c.env.DB.prepare("DELETE FROM workout_logs WHERE id = (SELECT id FROM workout_logs WHERE room_id = ? ORDER BY created_at DESC LIMIT 1)").bind(rooms[0].room_id).run();
-  return c.redirect(`/${slug}`);
-});
-
-// Глобальный обработчик ошибок
-app.onError((err, c) => {
-  console.error(`Ошибка: ${err.message}`);
-  return c.text('Внутренняя ошибка сервера', 500);
-});
-
-export const onRequest = app.fetch;
+// Экспортируем обработчик для Cloudflare Pages
+export const onRequest = (context) => handleRequest(context);

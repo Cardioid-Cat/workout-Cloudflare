@@ -6,6 +6,3 @@ pages_build_output_dir = ""
 binding = "DB"
 database_name = "workout-db"
 database_id = "00795852-a3a8-4aa4-8c9a-50accaab04ce"
-
-[vars]
-BOT_TOKEN = ""  # Заполни позже в настройках Cloudflare Pages

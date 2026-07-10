@@ -1,0 +1,11 @@
+name = "workout-site"
+main = "src/index.js"
+compatibility_date = "2026-07-11"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "workout-db"
+database_id = "00795852-a3a8-4aa4-8c9a-50accaab04ce"
+
+[vars]
+BOT_TOKEN = ""   # заполни позже через секрет

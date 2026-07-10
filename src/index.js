@@ -44,45 +44,6 @@ function getUnitIcon(unitType) {
   return unitType === 'time' ? '🕒' : '💪'
 }
 
-async function checkAdmin(c, roomSlug, password) {
-  if (!password) return false
-  const { results } = await c.env.DB.prepare(
-    'SELECT password FROM rooms WHERE slug = ?'
-  ).bind(roomSlug).all()
-  return results.length > 0 && results[0].password === password
-}
-
-async function sendTgNotification(env, room, text) {
-  const token = env.BOT_TOKEN
-  const chatId = room.tg_chat_id
-  if (!token || !chatId) return
-  try {
-    const { results: members } = await env.DB.prepare(
-      'SELECT user_id FROM group_members WHERE chat_id = ?'
-    ).bind(chatId).all()
-    let fullText
-    if (members.length > 0) {
-      const mentions = members
-        .map(m => `<a href="tg://user?id=${m.user_id}">\u2060</a>`)
-        .join('')
-      fullText = `📢 @all ${mentions}\n${text}`
-    } else {
-      fullText = `📢 @all\n${text}`
-    }
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: fullText,
-        parse_mode: 'HTML'
-      })
-    })
-  } catch (e) {
-    console.error('Ошибка отправки в Telegram:', e)
-  }
-}
-
 // ==================== ГЕНЕРАТОРЫ СТРАНИЦ ====================
 
 function renderCreateRoomPage(error = '') {
@@ -199,7 +160,7 @@ function renderCreateRoomPage(error = '') {
             align-items: center;
             gap: 10px;
         }
-        /* Попап – теперь вне карточки, позиционируем относительно body */
+        /* Попап */
         .global-popup {
             position: fixed;
             background: #ffffff;
@@ -400,47 +361,40 @@ function renderCreateRoomPage(error = '') {
 </html>`
 }
 
+// ==================== СТРАНИЦА КОМНАТЫ ====================
 function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap, errorMessage = '') {
-  // Генерируем HTML для сайдбара (настройки, игры, упражнения, участники)
+  const escapeHtmlLocal = escapeHtml
+  
   const profilesListHtml = profiles.length > 0
-    ? profiles.map(p => `<div class="submenu-item"><span>${escapeHtml(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${escapeHtml(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? profiles.map(p => `<div class="submenu-item"><span>${escapeHtmlLocal(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${escapeHtmlLocal(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет участников</div>'
 
   const exercisesListHtml = exTypes.filter(ex => ex.name !== '🏆 Победа').length > 0
-    ? exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${escapeHtml(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${escapeHtml(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${escapeHtmlLocal(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${escapeHtmlLocal(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет упражнений</div>'
 
   const gamesListHtml = games.length > 0
-    ? games.map(g => `<div class="submenu-item"><span>${escapeHtml(g.game_name)} (${g.val} ${escapeHtml(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${escapeHtml(g.game_name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+    ? games.map(g => `<div class="submenu-item"><span>${escapeHtmlLocal(g.game_name)} (${g.val} ${escapeHtmlLocal(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${escapeHtmlLocal(g.game_name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет игр</div>'
 
-  // Опции для выбора упражнения в форме добавления игры
   const gameExOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
-    `<option value="${escapeHtml(ex.name)}" data-unit="${ex.unit_type}">${escapeHtml(ex.name)}</option>`
+    `<option value="${escapeHtmlLocal(ex.name)}" data-unit="${ex.unit_type}">${escapeHtmlLocal(ex.name)}</option>`
   ).join('')
 
-  // Опции для выбора профиля
-  const profileOptions = profiles.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
-
-  // Опции для выбора упражнения в форме ввода долгов
+  const profileOptions = profiles.map(p => `<option value="${p.id}">${escapeHtmlLocal(p.name)}</option>`).join('')
   const exDebtOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
-    `<option value="${escapeHtml(ex.name)}">${escapeHtml(ex.name)}</option>`
+    `<option value="${escapeHtmlLocal(ex.name)}">${escapeHtmlLocal(ex.name)}</option>`
   ).join('')
-
-  // Опции для выбора игры в форме проведения игры
   const gameOptions = games.map(g =>
-    `<option value="${escapeHtml(g.game_name)}">${escapeHtml(g.game_name)} (${g.val} ${escapeHtml(g.ex_name)})</option>`
+    `<option value="${escapeHtmlLocal(g.game_name)}">${escapeHtmlLocal(g.game_name)} (${g.val} ${escapeHtmlLocal(g.ex_name)})</option>`
   ).join('')
-
-  // Чекбоксы победителей
   const winnerCheckboxes = profiles.map(p =>
     `<div class="form-check">
        <input class="form-check-input" type="checkbox" name="winner_ids" value="${p.id}" id="winner_${p.id}">
-       <label class="form-check-label" for="winner_${p.id}">${escapeHtml(p.name)}</label>
+       <label class="form-check-label" for="winner_${p.id}">${escapeHtmlLocal(p.name)}</label>
      </div>`
   ).join('')
 
-  // Рейтинг чемпионов
   const hallOfFameHtml = hallOfFame.length > 0
     ? hallOfFame.map((p, index) => {
         const wins = p.wins
@@ -448,13 +402,12 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
         if (wins % 10 === 1 && wins % 100 !== 11) winsWord = 'победа'
         else if (wins % 10 >= 2 && wins % 10 <= 4 && (wins % 100 < 10 || wins % 100 >= 20)) winsWord = 'победы'
         return `<div class="d-flex justify-content-between align-items-center ${index !== hallOfFame.length - 1 ? 'border-bottom' : ''} py-2">
-                 <span class="hall-of-fame-text">👤 ${escapeHtml(p.name)}</span>
+                 <span class="hall-of-fame-text">👤 ${escapeHtmlLocal(p.name)}</span>
                  <span class="fw-bold" style="color: #3182CE;">${wins} ${winsWord}</span>
                </div>`
       }).join('')
     : '<div class="text-center py-2 hall-of-fame-text">Побед пока нет.</div>'
 
-  // Аккордеон долгов
   const debtsAccordionHtml = Object.entries(summary).map(([name, items], idx) => {
     const hasDebt = Object.values(items).some(v => v > 0)
     const itemsHtml = hasDebt
@@ -464,7 +417,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
           .map(([ex, val]) => {
             const displayVal = exMap[ex] === 'time' ? formatTime(val) : val
             return `<div class="d-flex justify-content-between border-bottom py-2">
-                     <span class="text-muted">${exIcons[ex] || '💪'} ${escapeHtml(ex)}</span>
+                     <span class="text-muted">${exIcons[ex] || '💪'} ${escapeHtmlLocal(ex)}</span>
                      <span class="fw-bold">${displayVal}</span>
                    </div>`
           }).join('')
@@ -473,7 +426,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
       <div class="accordion-item border-0 mb-2 shadow-sm" style="border-radius: 12px; overflow: hidden;">
         <h2 class="accordion-header">
           <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${idx}">
-            👤 ${escapeHtml(name)}
+            👤 ${escapeHtmlLocal(name)}
           </button>
         </h2>
         <div id="collapse${idx}" class="accordion-collapse collapse">
@@ -486,7 +439,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>💪 ${escapeHtml(room.title)}</title>
+    <title>💪 ${escapeHtmlLocal(room.title)}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
@@ -622,11 +575,11 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <i class="bi bi-gear"></i>
                 <span class="sidebar-text">&nbsp; Настройки</span>
             </h5>
-            ${isAdmin ? `<a href="/logout?slug=${escapeHtml(room.slug)}" class="btn btn-sm btn-light mb-4 border sidebar-text">Выйти</a>` : `
+            ${isAdmin ? `<a href="/logout?slug=${escapeHtmlLocal(room.slug)}" class="btn btn-sm btn-light mb-4 border sidebar-text">Выйти</a>` : `
                 <div class="card border-0 bg-white p-3 shadow-sm mb-4 sidebar-hide" style="border-radius: 12px;">
                     <p class="text-muted small mb-2">🔑 Вход для админа</p>
                     <form action="/login" method="POST">
-                        <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                         <input type="password" name="password" class="form-control form-control-sm mb-2" placeholder="Пароль">
                         <button class="btn btn-dark btn-sm w-100">Войти</button>
                     </form>
@@ -636,7 +589,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-games')"><i class="bi bi-controller"></i>&nbsp; <span class="sidebar-text">НАСТРОЙКА ИГР</span></div>
                 <div id="sub-games" class="submenu-settings">
                     <form action="/add_game" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Название игры" required pattern=".*\\S.*" title="Название не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <select name="ex_name" class="form-select form-select-sm mb-1" style="font-size: 0.75rem;" required onchange="updateGameValPlaceholder(this)">
                             <option value="" disabled selected>Упражнение</option>
@@ -651,7 +604,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-ex')"><i class="bi bi-person-walking"></i>&nbsp; <span class="sidebar-text">УПРАЖНЕНИЯ</span></div>
                 <div id="sub-ex" class="submenu-settings">
                     <form action="/add_exercise" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Название" required pattern=".*\\S.*" title="Название не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <select name="unit_type" class="form-select form-select-sm mb-1" style="font-size: 0.75rem;">
                             <option value="amount">Количество</option>
@@ -665,7 +618,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <div class="nav-link-custom" onclick="toggleSubmenu('sub-users')"><i class="bi bi-person-fill"></i>&nbsp; <span class="sidebar-text">УЧАСТНИКИ</span></div>
                 <div id="sub-users" class="submenu-settings">
                     <form action="/add_profile" method="POST" class="p-2 border-bottom mb-2">
-                        <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                        <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                         <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Имя" required pattern=".*\\S.*" title="Имя не может состоять только из пробелов" style="font-size: 0.75rem;">
                         <button type="submit" class="btn btn-dark btn-sm w-100" style="font-size: 0.7rem;">+ Добавить</button>
                     </form>
@@ -673,7 +626,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 </div>
 
                 <div class="undo-section">
-                    <p class="small text-muted mb-1 sidebar-text" style="font-size: 0.75rem;">${escapeHtml(lastActionText) || 'Нет действий'}</p>
+                    <p class="small text-muted mb-1 sidebar-text" style="font-size: 0.75rem;">${escapeHtmlLocal(lastActionText) || 'Нет действий'}</p>
                     <button class="btn-undo sidebar-text" data-bs-toggle="modal" data-bs-target="#confirmUndo">
                         <i class="bi bi-arrow-left-short"></i> Отменить
                     </button>
@@ -683,9 +636,9 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
     </div>
 
     <div class="main-content flex-grow-1 p-5">
-        ${errorMessage ? `<div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 12px;">${escapeHtml(errorMessage)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>` : ''}
+        ${errorMessage ? `<div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 12px;">${escapeHtmlLocal(errorMessage)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>` : ''}
 
-        <h1 class="fw-bold mb-4">💪 ${escapeHtml(room.title)}</h1>
+        <h1 class="fw-bold mb-4">💪 ${escapeHtmlLocal(room.title)}</h1>
 
         ${isAdmin ? `
         <div class="d-flex gap-4 mb-4 border-bottom">
@@ -695,7 +648,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 
         <div id="view-vvod">
             <form action="/add_log" method="POST" id="vvod-form">
-                <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                 <input type="hidden" name="action_type" id="action_type" value="add">
                 <select class="form-select form-select-lg mb-3 border-0 bg-light" name="profile_id" required style="border-radius: 12px;">
                     <option value="" disabled selected>Выберите человека...</option>
@@ -704,7 +657,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 <input type="hidden" name="ex_name" id="selected-ex-name" required>
                 <div class="ex-grid mb-4">
                     ${exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => {
-                        return `<div class="btn-check-custom" data-unit="${ex.unit_type}" onclick="selectExercise(this, '${escapeHtml(ex.name)}')">${getUnitIcon(ex.unit_type)} ${escapeHtml(ex.name)}</div>`
+                        return `<div class="btn-check-custom" data-unit="${ex.unit_type}" onclick="selectExercise(this, '${escapeHtmlLocal(ex.name)}')">${getUnitIcon(ex.unit_type)} ${escapeHtmlLocal(ex.name)}</div>`
                     }).join('')}
                 </div>
                 <div id="vvod-controls" style="display:none;">
@@ -719,7 +672,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 
         <div id="view-igra" style="display:none;">
             <form action="/play_game" method="POST">
-                <input type="hidden" name="slug" value="${escapeHtml(room.slug)}">
+                <input type="hidden" name="slug" value="${escapeHtmlLocal(room.slug)}">
                 <label class="small text-muted">Игра?</label>
                 <select name="game_name" class="form-select mb-3 bg-light border-0 py-2">
                     ${gameOptions}
@@ -767,7 +720,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
             <h5 class="fw-bold mb-3">Отменить последнее действие?</h5>
             <div class="d-flex gap-2">
               <button class="btn btn-light w-100" data-bs-dismiss="modal">Нет</button>
-              <a href="/undo/${escapeHtml(room.slug)}" class="btn btn-dark w-100">Да, отменить</a>
+              <a href="/undo/${escapeHtmlLocal(room.slug)}" class="btn btn-dark w-100">Да, отменить</a>
             </div>
           </div>
         </div>
@@ -841,7 +794,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 const url = this.getAttribute('data-url');
                 const name = this.getAttribute('data-name');
                 document.getElementById('delItemName').innerText = name;
-                document.getElementById('confirmDelLink').href = url + "?slug=${escapeHtml(room.slug)}";
+                document.getElementById('confirmDelLink').href = url + "?slug=${escapeHtmlLocal(room.slug)}";
                 let myModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
                 myModal.show();
             });
@@ -953,26 +906,29 @@ app.post('/logout', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
+// Вспомогательная функция проверки админа через cookie
+function adminRequired(c, roomId) {
+  const cookie = c.req.header('Cookie') || ''
+  return cookie.includes(`auth_${roomId}=1`)
+}
+
 app.post('/add_profile', async (c) => {
   const body = await c.req.parseBody()
-  const { slug, name, password } = body
+  const { slug, name } = body
   if (!name || !name.trim()) return c.redirect(`/${slug}`)
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0 || !await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const trimmedName = name.trim()
-  const exists = await c.env.DB.prepare('SELECT 1 FROM profiles WHERE room_id = ? AND name = ?').bind(rooms[0].room_id, trimmedName).all()
-  if (exists.results.length === 0) {
-    await c.env.DB.prepare('INSERT INTO profiles (room_id, name) VALUES (?, ?)').bind(rooms[0].room_id, trimmedName).run()
-  }
+  await c.env.DB.prepare('INSERT OR IGNORE INTO profiles (room_id, name) VALUES (?, ?)').bind(rooms[0].room_id, trimmedName).run()
   return c.redirect(`/${slug}`)
 })
 
 app.post('/add_exercise', async (c) => {
   const body = await c.req.parseBody()
-  const { slug, name, unit_type, password } = body
+  const { slug, name, unit_type } = body
   if (!name || !name.trim() || name.trim() === '🏆 Победа') return c.redirect(`/${slug}`)
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0 || !await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const trimmedName = name.trim()
   await c.env.DB.prepare('INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, ?, ?)').bind(rooms[0].room_id, trimmedName, unit_type || 'amount').run()
   return c.redirect(`/${slug}`)
@@ -980,10 +936,10 @@ app.post('/add_exercise', async (c) => {
 
 app.post('/add_game', async (c) => {
   const body = await c.req.parseBody()
-  const { slug, name, ex_name, val, password } = body
+  const { slug, name, ex_name, val } = body
   if (!name || !ex_name || !val) return c.redirect(`/${slug}`)
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0 || !await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const numericVal = timeToSeconds(val)
   if (numericVal === null) return c.redirect(`/${slug}`)
   const unitType = (await c.env.DB.prepare('SELECT unit_type FROM exercise_types WHERE name = ? AND room_id = ?').bind(ex_name, rooms[0].room_id).all()).results[0]?.unit_type || 'amount'
@@ -993,10 +949,10 @@ app.post('/add_game', async (c) => {
 
 app.post('/add_log', async (c) => {
   const body = await c.req.parseBody()
-  const { slug, profile_id, ex_name, value, action_type, password } = body
+  const { slug, profile_id, ex_name, value, action_type } = body
   if (!profile_id || !ex_name || !value) return c.redirect(`/${slug}`)
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0 || !await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const numericVal = timeToSeconds(value)
   if (numericVal === null) return c.redirect(`/${slug}`)
   const amount = action_type === 'writeoff' ? -numericVal : numericVal
@@ -1011,10 +967,10 @@ app.post('/add_log', async (c) => {
 
 app.post('/play_game', async (c) => {
   const body = await c.req.parseBody()
-  const { slug, game_name, winner_ids, password } = body
+  const { slug, game_name, winner_ids } = body
   if (!game_name || !winner_ids || (Array.isArray(winner_ids) && winner_ids.length === 0)) return c.redirect(`/${slug}`)
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0 || !await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const roomId = rooms[0].room_id
   const { results: games } = await c.env.DB.prepare('SELECT * FROM games_presets WHERE room_id = ? AND game_name = ?').bind(roomId, game_name).all()
   if (games.length === 0) return c.redirect(`/${slug}`)
@@ -1038,12 +994,35 @@ app.post('/play_game', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
+app.get('/delete_:type/:id', async (c) => {
+  const type = c.req.param('type')
+  const id = c.req.param('id')
+  const slug = c.req.query('slug') || ''
+  const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
+  const roomId = rooms[0].room_id
+
+  if (type === 'game') {
+    await c.env.DB.prepare('DELETE FROM games_presets WHERE id = ?').bind(id).run()
+  } else if (type === 'ex') {
+    const ex = await c.env.DB.prepare('SELECT name FROM exercise_types WHERE id = ? AND room_id = ?').bind(id, roomId).first()
+    if (ex && ex.name === '🏆 Победа') return c.redirect(`/${slug}`)
+    if (ex) {
+      await c.env.DB.prepare('DELETE FROM workout_logs WHERE exercise_type = ? AND room_id = ?').bind(ex.name, roomId).run()
+      await c.env.DB.prepare('DELETE FROM games_presets WHERE ex_name = ? AND room_id = ?').bind(ex.name, roomId).run()
+      await c.env.DB.prepare('DELETE FROM exercise_types WHERE id = ?').bind(id).run()
+    }
+  } else if (type === 'profile') {
+    await c.env.DB.prepare('DELETE FROM workout_logs WHERE profile_id = ? AND room_id = ?').bind(id, roomId).run()
+    await c.env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id).run()
+  }
+  return c.redirect(`/${slug}`)
+})
+
 app.get('/undo/:slug', async (c) => {
   const slug = c.req.param('slug')
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
-  if (rooms.length === 0) return c.redirect('/')
-  const password = c.req.query('password') || ''
-  if (!await checkAdmin(c, slug, password)) return c.redirect(`/${slug}`)
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   await c.env.DB.prepare("DELETE FROM workout_logs WHERE id = (SELECT id FROM workout_logs WHERE room_id = ? ORDER BY created_at DESC LIMIT 1)").bind(rooms[0].room_id).run()
   return c.redirect(`/${slug}`)
 })
@@ -1052,6 +1031,29 @@ app.onError((err, c) => {
   console.error(`Ошибка: ${err.message}`)
   return c.text('Внутренняя ошибка сервера', 500)
 })
+
+async function sendTgNotification(env, room, text) {
+  const token = env.BOT_TOKEN
+  const chatId = room.tg_chat_id
+  if (!token || !chatId) return
+  try {
+    const { results: members } = await env.DB.prepare('SELECT user_id FROM group_members WHERE chat_id = ?').bind(chatId).all()
+    let fullText
+    if (members.length > 0) {
+      const mentions = members.map(m => `<a href="tg://user?id=${m.user_id}">\u2060</a>`).join('')
+      fullText = `📢 @all ${mentions}\n${text}`
+    } else {
+      fullText = `📢 @all\n${text}`
+    }
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: fullText, parse_mode: 'HTML' })
+    })
+  } catch (e) {
+    console.error('Ошибка отправки в Telegram:', e)
+  }
+}
 
 export default {
   fetch: app.fetch

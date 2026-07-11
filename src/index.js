@@ -373,30 +373,39 @@ function renderCreateRoomPage(error = '') {
 function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap, errorMessage = '') {
   const esc = escapeHtml
 
-  const profilesListHtml = profiles.length > 0
-    ? profiles.map(p => `<div class="submenu-item"><span>${esc(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${esc(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+  // Сортировки
+  const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name))
+  const sortedExTypes = [...exTypes].sort((a, b) => a.name.localeCompare(b.name))
+  const sortedGames = [...games].sort((a, b) => a.game_name.localeCompare(b.game_name))
+
+  const profilesListHtml = sortedProfiles.length > 0
+    ? sortedProfiles.map(p => `<div class="submenu-item"><span>${esc(p.name)}</span><button class="btn-del-tiny" data-url="/delete_profile/${p.id}" data-name="${esc(p.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет участников</div>'
 
-  const exercisesListHtml = exTypes.filter(ex => ex.name !== '🏆 Победа').length > 0
-    ? exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${esc(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${esc(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+  const exercisesListHtml = sortedExTypes.filter(ex => ex.name !== '🏆 Победа').length > 0
+    ? sortedExTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => `<div class="submenu-item"><span>${getUnitIcon(ex.unit_type)} ${esc(ex.name)}</span><button class="btn-del-tiny" data-url="/delete_ex/${ex.id}" data-name="${esc(ex.name)}"><i class="bi bi-trash"></i></button></div>`).join('')
     : '<div class="text-muted small p-2">Нет упражнений</div>'
 
-  const gamesListHtml = games.length > 0
-    ? games.map(g => `<div class="submenu-item"><span>${esc(g.game_name)} (${g.val} ${esc(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${esc(g.game_name)}"><i class="bi bi-trash"></i></button></div>`).join('')
+  const gamesListHtml = sortedGames.length > 0
+    ? sortedGames.map(g => {
+        const valDisplay = g.unit_type === 'time' ? formatTime(g.val) : g.val
+        return `<div class="submenu-item"><span>${esc(g.game_name)} (${valDisplay} ${esc(g.ex_name)})</span><button class="btn-del-tiny" data-url="/delete_game/${g.id}" data-name="${esc(g.game_name)}"><i class="bi bi-trash"></i></button></div>`
+      }).join('')
     : '<div class="text-muted small p-2">Нет игр</div>'
 
-  const gameExOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
+  const gameExOptions = sortedExTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
     `<option value="${esc(ex.name)}" data-unit="${ex.unit_type}">${esc(ex.name)}</option>`
   ).join('')
 
-  const profileOptions = profiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
-  const exDebtOptions = exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
+  const profileOptions = sortedProfiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
+  const exDebtOptions = sortedExTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
     `<option value="${esc(ex.name)}">${esc(ex.name)}</option>`
   ).join('')
-  const gameOptions = games.map(g =>
-    `<option value="${esc(g.game_name)}">${esc(g.game_name)} (${g.val} ${esc(g.ex_name)})</option>`
-  ).join('')
-  const winnerCheckboxes = profiles.map(p =>
+  const gameOptions = sortedGames.map(g => {
+    const valDisplay = g.unit_type === 'time' ? formatTime(g.val) : g.val
+    return `<option value="${esc(g.game_name)}">${esc(g.game_name)} (${valDisplay} ${esc(g.ex_name)})</option>`
+  }).join('')
+  const winnerCheckboxes = sortedProfiles.map(p =>
     `<div class="form-check"><input class="form-check-input" type="checkbox" name="winner_ids" value="${p.id}" id="winner_${p.id}"><label class="form-check-label" for="winner_${p.id}">${esc(p.name)}</label></div>`
   ).join('')
 
@@ -559,7 +568,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                             <option value="" disabled selected>Упражнение</option>
                             ${gameExOptions}
                         </select>
-                        <input type="text" name="val" id="game_val_input" class="form-control form-control-sm mb-1" placeholder="Кол-во или ММ:СС" required pattern=".*\\S.*" style="font-size: 0.75rem;">
+                        <input type="text" name="val" id="game_val_input" class="form-control form-control-sm mb-1" placeholder="Кол-во или ММ:СС" required pattern="^(\\d+|\\d+:\\d+)$" style="font-size: 0.75rem;">
                         <button type="submit" class="btn btn-dark btn-sm w-100" style="font-size: 0.7rem;">+ Добавить</button>
                     </form>
                     ${gamesListHtml}
@@ -620,7 +629,7 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
                 </select>
                 <input type="hidden" name="ex_name" id="selected-ex-name" required>
                 <div class="ex-grid mb-4">
-                    ${exTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => {
+                    ${sortedExTypes.filter(ex => ex.name !== '🏆 Победа').map(ex => {
                         return `<div class="btn-check-custom" data-unit="${ex.unit_type}" onclick="selectExercise(this, '${esc(ex.name)}')">${getUnitIcon(ex.unit_type)} ${esc(ex.name)}</div>`
                     }).join('')}
                 </div>
@@ -770,8 +779,8 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
             var inputField = document.getElementById('game_val_input');
             if (unit === 'time') {
                 inputField.placeholder = "Кол-во или ММ:СС (1:30)";
-                inputField.pattern = ".*\\\\S.*";
-                inputField.title = "";
+                inputField.pattern = "^(\\\\d+|\\\\d+:\\\\d+)$";
+                inputField.title = "Введите число (секунды) или формат ММ:СС";
             } else {
                 inputField.placeholder = "Только число (например, 50)";
                 inputField.pattern = "^[0-9]+$";
@@ -957,28 +966,40 @@ app.post('/play_game', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
-app.get('/delete_:type/:id', async (c) => {
-  const type = c.req.param('type')
+// ----- ИСПРАВЛЕННЫЕ МАРШРУТЫ УДАЛЕНИЯ (явные) -----
+app.get('/delete_game/:id', async (c) => {
+  const id = c.req.param('id')
+  const slug = c.req.query('slug') || ''
+  const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
+  await c.env.DB.prepare('DELETE FROM games_presets WHERE id = ?').bind(id).run()
+  return c.redirect(`/${slug}`)
+})
+
+app.get('/delete_ex/:id', async (c) => {
   const id = c.req.param('id')
   const slug = c.req.query('slug') || ''
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const roomId = rooms[0].room_id
-
-  if (type === 'game') {
-    await c.env.DB.prepare('DELETE FROM games_presets WHERE id = ?').bind(id).run()
-  } else if (type === 'ex') {
-    const ex = await c.env.DB.prepare('SELECT name FROM exercise_types WHERE id = ? AND room_id = ?').bind(id, roomId).first()
-    if (ex && ex.name === '🏆 Победа') return c.redirect(`/${slug}`)
-    if (ex) {
-      await c.env.DB.prepare('DELETE FROM workout_logs WHERE exercise_type = ? AND room_id = ?').bind(ex.name, roomId).run()
-      await c.env.DB.prepare('DELETE FROM games_presets WHERE ex_name = ? AND room_id = ?').bind(ex.name, roomId).run()
-      await c.env.DB.prepare('DELETE FROM exercise_types WHERE id = ?').bind(id).run()
-    }
-  } else if (type === 'profile') {
-    await c.env.DB.prepare('DELETE FROM workout_logs WHERE profile_id = ? AND room_id = ?').bind(id, roomId).run()
-    await c.env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id).run()
+  const ex = await c.env.DB.prepare('SELECT name FROM exercise_types WHERE id = ? AND room_id = ?').bind(id, roomId).first()
+  if (ex && ex.name === '🏆 Победа') return c.redirect(`/${slug}`)
+  if (ex) {
+    await c.env.DB.prepare('DELETE FROM workout_logs WHERE exercise_type = ? AND room_id = ?').bind(ex.name, roomId).run()
+    await c.env.DB.prepare('DELETE FROM games_presets WHERE ex_name = ? AND room_id = ?').bind(ex.name, roomId).run()
+    await c.env.DB.prepare('DELETE FROM exercise_types WHERE id = ?').bind(id).run()
   }
+  return c.redirect(`/${slug}`)
+})
+
+app.get('/delete_profile/:id', async (c) => {
+  const id = c.req.param('id')
+  const slug = c.req.query('slug') || ''
+  const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
+  if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
+  const roomId = rooms[0].room_id
+  await c.env.DB.prepare('DELETE FROM workout_logs WHERE profile_id = ? AND room_id = ?').bind(id, roomId).run()
+  await c.env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id).run()
   return c.redirect(`/${slug}`)
 })
 

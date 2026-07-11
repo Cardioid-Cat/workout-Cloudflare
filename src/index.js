@@ -949,19 +949,14 @@ app.post('/add_log', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
-// ИСПРАВЛЕННАЯ ФУНКЦИЯ play_game
+// ==================== ИГРА – ИСПРАВЛЕННАЯ ОБРАБОТКА ПОБЕДИТЕЛЕЙ ====================
 app.post('/play_game', async (c) => {
-  const body = await c.req.parseBody()
-  const { slug, game_name, winner_ids } = body
-  if (!game_name || !winner_ids) return c.redirect(`/${slug}`)
+  const formData = await c.req.formData()
+  const slug = formData.get('slug')
+  const game_name = formData.get('game_name')
+  const winnerIds = formData.getAll('winner_ids') // теперь это всегда массив
 
-  let winnerList = winner_ids
-  if (!Array.isArray(winnerList)) {
-    winnerList = String(winnerList).split(',').map(id => id.trim())
-  } else {
-    winnerList = winnerList.map(String)
-  }
-  if (winnerList.length === 0) return c.redirect(`/${slug}`)
+  if (!game_name || !winnerIds.length) return c.redirect(`/${slug}`)
 
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
@@ -972,7 +967,7 @@ app.post('/play_game', async (c) => {
   const { results: allProfiles } = await c.env.DB.prepare('SELECT id, name FROM profiles WHERE room_id = ?').bind(roomId).all()
   const losers = []
   for (const p of allProfiles) {
-    if (winnerList.includes(String(p.id))) {
+    if (winnerIds.includes(String(p.id))) {
       await c.env.DB.prepare("INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, '🏆 Победа', 1, ?)").bind(p.id, roomId).run()
     } else {
       await c.env.DB.prepare('INSERT INTO workout_logs (profile_id, exercise_type, amount, room_id) VALUES (?, ?, ?, ?)').bind(p.id, game.ex_name, game.val, roomId).run()

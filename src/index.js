@@ -373,7 +373,6 @@ function renderCreateRoomPage(error = '') {
 function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap, errorMessage = '') {
   const esc = escapeHtml
 
-  // Сортировки
   const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name))
   const sortedExTypes = [...exTypes].sort((a, b) => a.name.localeCompare(b.name))
   const sortedGames = [...games].sort((a, b) => a.game_name.localeCompare(b.game_name))
@@ -398,9 +397,6 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
   ).join('')
 
   const profileOptions = sortedProfiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
-  const exDebtOptions = sortedExTypes.filter(ex => ex.name !== '🏆 Победа').map(ex =>
-    `<option value="${esc(ex.name)}">${esc(ex.name)}</option>`
-  ).join('')
   const gameOptions = sortedGames.map(g => {
     const valDisplay = g.unit_type === 'time' ? formatTime(g.val) : g.val
     return `<option value="${esc(g.game_name)}">${esc(g.game_name)} (${valDisplay} ${esc(g.ex_name)})</option>`
@@ -794,10 +790,14 @@ function renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFam
 
 // ==================== МАРШРУТЫ ====================
 
-app.get('/', (c) => c.html(renderCreateRoomPage()))
+app.get('/', (c) => {
+  const error = c.req.query('error') || ''
+  return c.html(renderCreateRoomPage(error))
+})
 
 app.get('/:slug', async (c) => {
   const slug = c.req.param('slug')
+  const error = c.req.query('error') || ''
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0) return c.text('Комната не найдена', 404)
 
@@ -841,7 +841,7 @@ app.get('/:slug', async (c) => {
   const lastLog = logs[0]
   const lastActionText = lastLog ? `Последнее: ${idToName[lastLog.profile_id] || lastLog.profile_name} - ${lastLog.exercise_type}` : ''
 
-  return c.html(renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap))
+  return c.html(renderRoomPage(room, profiles, exTypes, games, logs, summary, hallOfFame, isAdmin, lastActionText, exIcons, exMap, error))
 })
 
 app.post('/create_room', async (c) => {
@@ -884,6 +884,10 @@ function adminRequired(c, roomId) {
   return cookie.includes(`auth_${roomId}=1`)
 }
 
+function redirectWithError(slug, error) {
+  return (c) => c.redirect(`/${slug}?error=${encodeURIComponent(error)}`)
+}
+
 app.post('/add_profile', async (c) => {
   const body = await c.req.parseBody()
   const { slug, name } = body
@@ -891,7 +895,9 @@ app.post('/add_profile', async (c) => {
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const trimmedName = name.trim()
-  await c.env.DB.prepare('INSERT OR IGNORE INTO profiles (room_id, name) VALUES (?, ?)').bind(rooms[0].room_id, trimmedName).run()
+  const { results: existing } = await c.env.DB.prepare('SELECT 1 FROM profiles WHERE room_id = ? AND name = ?').bind(rooms[0].room_id, trimmedName).all()
+  if (existing.length > 0) return redirectWithError(slug, `Участник с именем «${trimmedName}» уже существует`)(c)
+  await c.env.DB.prepare('INSERT INTO profiles (room_id, name) VALUES (?, ?)').bind(rooms[0].room_id, trimmedName).run()
   return c.redirect(`/${slug}`)
 })
 
@@ -902,7 +908,9 @@ app.post('/add_exercise', async (c) => {
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const trimmedName = name.trim()
-  await c.env.DB.prepare('INSERT OR IGNORE INTO exercise_types (room_id, name, unit_type) VALUES (?, ?, ?)').bind(rooms[0].room_id, trimmedName, unit_type || 'amount').run()
+  const { results: existing } = await c.env.DB.prepare('SELECT 1 FROM exercise_types WHERE room_id = ? AND name = ?').bind(rooms[0].room_id, trimmedName).all()
+  if (existing.length > 0) return redirectWithError(slug, `Упражнение «${trimmedName}» уже существует`)(c)
+  await c.env.DB.prepare('INSERT INTO exercise_types (room_id, name, unit_type) VALUES (?, ?, ?)').bind(rooms[0].room_id, trimmedName, unit_type || 'amount').run()
   return c.redirect(`/${slug}`)
 })
 
@@ -914,8 +922,12 @@ app.post('/add_game', async (c) => {
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const numericVal = timeToSeconds(val)
   if (numericVal === null) return c.redirect(`/${slug}`)
+  const { results: nameExists } = await c.env.DB.prepare('SELECT 1 FROM games_presets WHERE room_id = ? AND game_name = ?').bind(rooms[0].room_id, name.trim()).all()
+  if (nameExists.length > 0) return redirectWithError(slug, `Игра с названием «${name.trim()}» уже существует`)(c)
+  const { results: comboExists } = await c.env.DB.prepare('SELECT 1 FROM games_presets WHERE room_id = ? AND ex_name = ? AND val = ?').bind(rooms[0].room_id, ex_name, numericVal).all()
+  if (comboExists.length > 0) return redirectWithError(slug, `Игра с наказанием «${ex_name} ${val}» уже существует`)(c)
   const unitType = (await c.env.DB.prepare('SELECT unit_type FROM exercise_types WHERE name = ? AND room_id = ?').bind(ex_name, rooms[0].room_id).all()).results[0]?.unit_type || 'amount'
-  await c.env.DB.prepare('INSERT OR IGNORE INTO games_presets (room_id, game_name, ex_name, val, unit_type) VALUES (?, ?, ?, ?, ?)').bind(rooms[0].room_id, name.trim(), ex_name, numericVal, unitType).run()
+  await c.env.DB.prepare('INSERT INTO games_presets (room_id, game_name, ex_name, val, unit_type) VALUES (?, ?, ?, ?, ?)').bind(rooms[0].room_id, name.trim(), ex_name, numericVal, unitType).run()
   return c.redirect(`/${slug}`)
 })
 
@@ -937,17 +949,26 @@ app.post('/add_log', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ play_game
 app.post('/play_game', async (c) => {
   const body = await c.req.parseBody()
   const { slug, game_name, winner_ids } = body
-  if (!game_name || !winner_ids || (Array.isArray(winner_ids) && winner_ids.length === 0)) return c.redirect(`/${slug}`)
+  if (!game_name || !winner_ids) return c.redirect(`/${slug}`)
+
+  let winnerList = winner_ids
+  if (!Array.isArray(winnerList)) {
+    winnerList = String(winnerList).split(',').map(id => id.trim())
+  } else {
+    winnerList = winnerList.map(String)
+  }
+  if (winnerList.length === 0) return c.redirect(`/${slug}`)
+
   const { results: rooms } = await c.env.DB.prepare('SELECT * FROM rooms WHERE slug = ?').bind(slug).all()
   if (rooms.length === 0 || !adminRequired(c, rooms[0].room_id)) return c.redirect(`/${slug}`)
   const roomId = rooms[0].room_id
   const { results: games } = await c.env.DB.prepare('SELECT * FROM games_presets WHERE room_id = ? AND game_name = ?').bind(roomId, game_name).all()
   if (games.length === 0) return c.redirect(`/${slug}`)
   const game = games[0]
-  const winnerList = Array.isArray(winner_ids) ? winner_ids : [winner_ids]
   const { results: allProfiles } = await c.env.DB.prepare('SELECT id, name FROM profiles WHERE room_id = ?').bind(roomId).all()
   const losers = []
   for (const p of allProfiles) {
@@ -966,7 +987,7 @@ app.post('/play_game', async (c) => {
   return c.redirect(`/${slug}`)
 })
 
-// ----- ИСПРАВЛЕННЫЕ МАРШРУТЫ УДАЛЕНИЯ (явные) -----
+// Маршруты удаления
 app.get('/delete_game/:id', async (c) => {
   const id = c.req.param('id')
   const slug = c.req.query('slug') || ''

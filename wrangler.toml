@@ -8,4 +8,4 @@ database_name = "workout-db"
 database_id = "00795852-a3a8-4aa4-8c9a-50accaab04ce"
 
 [vars]
-BOT_TOKEN = "8695182622:AAFuTCGiMhL9YJupAfS1TeKVeQ7dsi0YRB8"
+BOT_TOKEN = ""
